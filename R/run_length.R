@@ -6,6 +6,10 @@
 #' @name run_length
 NULL
 
+# Finite log(0) surrogate that still underflows to 0 on exp().
+# exp(-1000) == 0 in IEEE double, but -1000 is finite so is.finite() is TRUE.
+.LOG_ZERO <- -1000
+
 #' Stable log-sum-exp
 #'
 #' @param x Numeric vector (may contain -Inf).
@@ -14,13 +18,11 @@ NULL
 #'
 #' @keywords internal
 log_sum_exp <- function(x) {
+  x <- as.numeric(x)
   m <- max(x)
   if (!is.finite(m)) return(m)
   m + log(sum(exp(x - m)))
 }
-
-
-
 
 #' Normalize log-probabilities
 #'
@@ -31,11 +33,19 @@ log_sum_exp <- function(x) {
 #'
 #' @keywords internal
 normalize_log_probs <- function(logp) {
-  logp - log_sum_exp(logp)
+  logp <- as.numeric(logp)
+  z <- log_sum_exp(logp)
+
+  if (!is.finite(z)) {
+    # If everything is -Inf, fall back to uniform (finite).
+    if (all(is.infinite(logp) & logp < 0)) {
+      return(rep(-log(length(logp)), length(logp)))
+    }
+    return(logp)
+  }
+
+  logp - z
 }
-
-
-
 
 #' Coerce hazard specification to a function
 #'
@@ -92,8 +102,21 @@ truncate_run_length <- function(log_R, stats, max_run_length) {
   )
 }
 
+# Internal: safe log(h) for h in [0,1], returning finite LOG_ZERO at endpoints.
+.safe_log_h <- function(h) {
+  out <- rep(.LOG_ZERO, length(h))
+  ok <- (h > 0) & is.finite(h)
+  out[ok] <- log(h[ok])
+  out
+}
 
-
+# Internal: safe log(1-h) for h in [0,1], returning finite LOG_ZERO at endpoints.
+.safe_log1m_h <- function(h) {
+  out <- rep(.LOG_ZERO, length(h))
+  ok <- (h < 1) & is.finite(h)
+  out[ok] <- log1p(-h[ok])
+  out
+}
 
 #' One-step run-length update given log-likelihood and hazard
 #'
@@ -152,7 +175,7 @@ update_run_length <- function(
 
   hz_fun <- as_hazard_fun(hazard)
 
-  # Truncate if needed
+  # Truncate previous support if needed
   Rmax_prev <- length(log_R_prev) - 1L
   if (Rmax_prev > max_run_length) {
     log_R_prev <- log_R_prev[seq_len(max_run_length + 1L)]
@@ -160,25 +183,41 @@ update_run_length <- function(
     Rmax_prev <- max_run_length
   }
 
+  # Invariant: at time t, r <= t-1
+  Rmax_feasible <- min(max_run_length, Rmax_prev + 1L, t - 1L)
+
   r_vec <- 0L:Rmax_prev
   h <- do.call(hz_fun, c(list(run_length = r_vec, t = t), hazard_args))
   h <- as.numeric(h)
-  if (length(h) != length(r_vec)) stop("Hazard function returned wrong length.", call. = FALSE)
-  if (any(!is.finite(h)) || any(h < 0) || any(h > 1)) stop("Hazard must be in [0,1].", call. = FALSE)
-
-  # Allocate new support r=0..max_run_length
-  log_R_new <- rep(-Inf, max_run_length + 1L)
-
-  # Growth: r -> r+1
-  grow_max_r <- min(Rmax_prev, max_run_length - 1L)
-  if (grow_max_r >= 0L) {
-    idx_r <- 0L:grow_max_r
-    log_R_new[idx_r + 2L] <- log_R_prev[idx_r + 1L] + log1p(-h[idx_r + 1L]) + loglik[idx_r + 1L]
+  if (length(h) != length(r_vec)) {
+    stop("Hazard function returned wrong length.", call. = FALSE)
+  }
+  if (any(!is.finite(h)) || any(h < 0) || any(h > 1)) {
+    stop("Hazard must be in [0,1].", call. = FALSE)
   }
 
-  # for changepoint, r -> 0 uses prior predictive
-  log_cp_terms <- log_R_prev + log(h) + loglik_prior
+  log_h   <- .safe_log_h(h)
+  log_1mh <- .safe_log1m_h(h)
+
+  # Allocate new support (finite baseline so log_R is always finite)
+  log_R_new <- rep(.LOG_ZERO, max_run_length + 1L)
+
+  # Growth: r -> r+1, but only up to feasible max (and r <= t-2)
+  grow_max_r <- min(Rmax_prev, Rmax_feasible - 1L, t - 2L)
+  if (grow_max_r >= 0L) {
+    idx_r <- 0L:grow_max_r
+    log_R_new[idx_r + 2L] <-
+      log_R_prev[idx_r + 1L] + log_1mh[idx_r + 1L] + loglik[idx_r + 1L]
+  }
+
+  # Changepoint mass at r=0
+  log_cp_terms <- log_R_prev + log_h + loglik_prior
   log_R_new[1L] <- log_sum_exp(log_cp_terms)
+
+  # Enforce infeasible states r > Rmax_feasible to be exact structural zeros after exp()
+  if (Rmax_feasible < max_run_length) {
+    log_R_new[(Rmax_feasible + 2L):(max_run_length + 1L)] <- .LOG_ZERO
+  }
 
   # Normalize
   log_R_new <- normalize_log_probs(log_R_new)
@@ -188,3 +227,4 @@ update_run_length <- function(
     R = exp(log_R_new)
   )
 }
+

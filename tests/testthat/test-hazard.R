@@ -60,3 +60,38 @@ test_that("hazard_logistic_run_length is monotone when b>0 and stable for extrem
   expect_error(hazard_logistic_run_length(a = 1, b = NA_real_), "finite")
 })
 
+
+
+test_that("hazard_from_pmf matches definition and handles tails", {
+  # uniform on {1,2,3}
+  h <- hazard_from_pmf(c(1, 1, 1), tail_hazard = 1)
+
+  # survival: S1=1, S2=2/3, S3=1/3
+  # hazard r=0 -> pmf1/S1 = 1/3
+  # hazard r=1 -> pmf2/S2 = (1/3)/(2/3) = 1/2
+  # hazard r=2 -> pmf3/S3 = (1/3)/(1/3) = 1
+  out <- h(0:5, t = 1)
+  expect_equal(out[1], 1/3, tolerance = 1e-12)
+  expect_equal(out[2], 1/2, tolerance = 1e-12)
+  expect_equal(out[3], 1, tolerance = 1e-12)
+  # tail hazard forces cp for r>=3
+  expect_equal(out[4:6], rep(1, 3))
+
+  # tail_hazard not 1
+  h2 <- hazard_from_pmf(c(0.2, 0.8), tail_hazard = 0.25)
+  out2 <- h2(0:10, t = 1)
+  expect_equal(out2[3], 0.25) # r=2 >= K
+  expect_true(all(out2 >= 0 & out2 <= 1))
+
+  # pmf normalization invariant
+  h3 <- hazard_from_pmf(c(2, 2, 2), tail_hazard = 0.5)
+  expect_equal(h3(0:2, t = 1), h(0:2, t = 1), tolerance = 1e-12)
+
+  # validations
+  expect_error(hazard_from_pmf(numeric(0)), "non-empty")
+  expect_error(hazard_from_pmf(c(NA_real_)), "finite")
+  expect_error(hazard_from_pmf(c(-1, 1)), "nonnegative")
+  expect_error(hazard_from_pmf(c(0, 0, 0)), "positive sum")
+  expect_error(hazard_from_pmf(c(1, 1), tail_hazard = 1.5), "\\[0,1\\]")
+})
+

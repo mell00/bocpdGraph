@@ -93,3 +93,99 @@ test_that("truncate_run_length validates and truncates consistently", {
   expect_error(truncate_run_length(log_R, stats[-1], 2), "same length")
   expect_error(truncate_run_length(log_R, stats, -1), "nonnegative")
 })
+
+
+
+test_that("update_run_length enforces invariants and is numerically stable", {
+  set.seed(1)
+
+  # basic well-formed
+  log_R_prev <- normalize_log_probs(c(0, -1, -2))  # r=0..2
+  loglik <- c(-0.5, -0.2, -1.0)
+  loglik_prior <- -0.3
+
+  res <- update_run_length(
+    log_R_prev = log_R_prev,
+    loglik = loglik,
+    loglik_prior = loglik_prior,
+    hazard = 0.1,
+    t = 1,
+    max_run_length = 5
+  )
+  expect_true(is.list(res))
+  expect_equal(length(res$log_R), 6)
+  expect_equal(length(res$R), 6)
+  expect_equal(sum(res$R), 1, tolerance = 1e-12)
+  expect_true(all(res$R >= 0))
+  expect_true(all(is.finite(res$log_R)))
+
+  # hazard = 0 => changepoint mass should be 0 (unless numerical), growth only
+  res0 <- update_run_length(
+    log_R_prev = log_R_prev,
+    loglik = loglik,
+    loglik_prior = loglik_prior,
+    hazard = 0,
+    t = 2,
+    max_run_length = 5
+  )
+  expect_equal(res0$R[1], 0, tolerance = 1e-15)
+  expect_equal(sum(res0$R), 1, tolerance = 1e-12)
+
+  # hazard = 1 => all mass resets to r=0
+  res1 <- update_run_length(
+    log_R_prev = log_R_prev,
+    loglik = loglik,
+    loglik_prior = loglik_prior,
+    hazard = 1,
+    t = 3,
+    max_run_length = 5
+  )
+  expect_equal(res1$R, c(1, rep(0, 5)), tolerance = 1e-15)
+
+  # if max_run_length small, still normalized and stable
+  res_tr <- update_run_length(
+    log_R_prev = log_R_prev,
+    loglik = loglik,
+    loglik_prior = loglik_prior,
+    hazard = 0.2,
+    t = 4,
+    max_run_length = 0
+  )
+  expect_equal(length(res_tr$R), 1)
+  expect_equal(res_tr$R[1], 1, tolerance = 1e-12)
+
+  # very large negative/positive values should not overflow
+  log_R_prev2 <- normalize_log_probs(c(0, -1000, -2000, -3000))
+  loglik2 <- c(1000, -1000, -1000, -1000)  # huge
+  res_big <- update_run_length(
+    log_R_prev = log_R_prev2,
+    loglik = loglik2,
+    loglik_prior = 1000,
+    hazard = 0.5,
+    t = 5,
+    max_run_length = 10
+  )
+  expect_equal(sum(res_big$R), 1, tolerance = 1e-12)
+  expect_true(all(is.finite(res_big$log_R)))
+
+  # validations
+  expect_error(update_run_length(numeric(0), numeric(0), 0, 0.1, 1, 5), "non-empty")
+  expect_error(update_run_length(c(0, -1), c(-1), 0, 0.1, 1, 5), "same length")
+  expect_error(update_run_length(c(0, -1), c(-1, -1), NA_real_, 0.1, 1, 5), "finite")
+  expect_error(update_run_length(c(0, -1), c(-1, -1), 0, 0.1, 0, 5), ">= 1")
+  expect_error(update_run_length(c(0, -1), c(-1, -1), 0, 0.1, 1, -1), "nonnegative")
+
+  # hazard function wrong length
+  bad_h <- function(run_length, t, ...) 0.2
+  expect_error(
+    update_run_length(log_R_prev, loglik, loglik_prior, bad_h, 1, 5),
+    "wrong length"
+  )
+
+  # hazard function out of bounds
+  bad_h2 <- function(run_length, t, ...) rep(2, length(run_length))
+  expect_error(
+    update_run_length(log_R_prev, loglik, loglik_prior, bad_h2, 1, 5),
+    "in \\[0,1\\]"
+  )
+})

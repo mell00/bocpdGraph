@@ -34,3 +34,29 @@ test_that("hazard_piecewise_time behaves correctly at boundaries and validates i
   expect_error(hazard_piecewise_time(times = c(5, 10), p = c(-0.1, 0.2, 0.3)), "\\[0,1\\]")
   expect_error(h(0:2, t = NA_real_), "finite")
 })
+
+
+test_that("hazard_logistic_run_length is monotone when b>0 and stable for extremes", {
+  h <- hazard_logistic_run_length(a = -10, b = 0.5)
+  r <- 0:20
+  out <- h(r, t = 1)
+
+  expect_equal(length(out), length(r))
+  expect_true(all(out >= 0 & out <= 1))
+  # monotone nondecreasing (allow tiny numeric noise)
+  expect_true(all(diff(out) >= -1e-12))
+
+  # extreme positive eta -> ~1
+  h_hi <- hazard_logistic_run_length(a = 1000, b = 0)
+  out_hi <- h_hi(0:3, t = 1)
+  expect_true(all(out_hi > 1 - 1e-12))
+
+  # extreme negative eta -> ~0
+  h_lo <- hazard_logistic_run_length(a = -1000, b = 0)
+  out_lo <- h_lo(0:3, t = 1)
+  expect_true(all(out_lo < 1e-12))
+
+  expect_error(hazard_logistic_run_length(a = NA_real_, b = 1), "finite")
+  expect_error(hazard_logistic_run_length(a = 1, b = NA_real_), "finite")
+})
+

@@ -70,3 +70,26 @@ test_that("as_hazard_fun handles function hazards and constant hazards", {
   expect_error(as_hazard_fun(c(0.1, 0.2)))
   expect_error(as_hazard_fun(NA_real_))
 })
+
+
+test_that("truncate_run_length validates and truncates consistently", {
+  log_R <- c(0, -1, -2, -3)
+  stats <- list(a=1, b=2, c=3, d=4)
+
+  tr <- truncate_run_length(log_R, stats, max_run_length = 2)
+  expect_equal(length(tr$log_R), 3)   # 0..2
+  expect_equal(length(tr$stats), 3)
+  expect_equal(tr$log_R, log_R[1:3])
+  expect_equal(tr$stats, stats[1:3])
+
+  # no truncation
+  tr2 <- truncate_run_length(log_R, stats, max_run_length = 10)
+  expect_equal(tr2$log_R, log_R)
+  expect_equal(tr2$stats, stats)
+
+  # validations
+  expect_error(truncate_run_length("x", stats, 2), "numeric")
+  expect_error(truncate_run_length(log_R, "x", 2), "list")
+  expect_error(truncate_run_length(log_R, stats[-1], 2), "same length")
+  expect_error(truncate_run_length(log_R, stats, -1), "nonnegative")
+})

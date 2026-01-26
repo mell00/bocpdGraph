@@ -53,3 +53,20 @@ test_that("normalize_log_probs returns a proper log-prob vector", {
   out4 <- normalize_log_probs(c(-Inf, -Inf))
   expect_equal(length(out4), 2)
 })
+
+
+test_that("as_hazard_fun handles function hazards and constant hazards", {
+  hf <- function(run_length, t, ...) rep(0.123, length(run_length))
+  out <- as_hazard_fun(hf)
+  expect_true(is.function(out))
+  expect_equal(out(0:4, 1), rep(0.123, 5))
+
+  out2 <- as_hazard_fun(0.2)
+  expect_true(is.function(out2))
+  expect_equal(out2(0:4, 99), rep(0.2, 5))
+
+  expect_error(as_hazard_fun(1.2), "in \\[0,1\\]")
+  expect_error(as_hazard_fun(-0.1), "in \\[0,1\\]")
+  expect_error(as_hazard_fun(c(0.1, 0.2)))
+  expect_error(as_hazard_fun(NA_real_))
+})

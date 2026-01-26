@@ -11,7 +11,7 @@ NULL
 
 #' Constant hazard function
 #'
-#' @param p Scalar changepoint probability in [0,1].
+#' @param p Scalar changepoint probability in `[0,1]`.
 #'
 #' @return A hazard function \code{h(run_length, t, ...)} returning a numeric
 #'   vector of probabilities (same length as \code{run_length}).
@@ -38,7 +38,7 @@ hazard_constant <- function(p) {
 #' This is an alias for \code{hazard_constant()}, included for clarity because
 #' the induced segment length distribution is geometric.
 #'
-#' @param p Scalar changepoint probability in [0,1].
+#' @param p Scalar changepoint probability in `[0,1]`.
 #'
 #' @return A hazard function.
 #'
@@ -56,7 +56,7 @@ hazard_geometric <- function(p) {
 #' @param times Integer vector of time cutpoints (strictly increasing).
 #'   Hazard \code{p[i]} is used for \code{t <= times[i]} and the last value is used
 #'   after the final cutpoint.
-#' @param p Numeric vector of probabilities in [0,1] of length \code{length(times)+1}.
+#' @param p Numeric vector of probabilities in `[0,1]` of length \code{length(times)+1}.
 #'
 #' @return A hazard function.
 #'

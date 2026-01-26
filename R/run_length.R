@@ -43,8 +43,8 @@ normalize_log_probs <- function(logp) {
 #'
 #' @param hazard Either:
 #' \itemize{
-#'   \item a function \code{hazard(run_length, t, ...)} returning probabilities in [0,1], or
-#'   \item a numeric scalar in [0,1] indicating a constant hazard.
+#'   \item a function \code{hazard(run_length, t, ...)} returning probabilities in `[0,1]`, or
+#'   \item a numeric scalar in `[0,1]` indicating a constant hazard.
 #' }
 #'
 #' @return A function \code{f(run_length, t, ...)}.
@@ -110,7 +110,7 @@ truncate_run_length <- function(log_R, stats, max_run_length) {
 #'   log predictive densities for the new observation y_t under each run-length.
 #' @param loglik_prior Single number: log predictive density under the prior/reset
 #'   statistics used for changepoints.
-#' @param hazard Hazard specification (function or scalar in [0,1]).
+#' @param hazard Hazard specification (function or scalar in `[0,1]`).
 #' @param t Integer time index after the update (i.e., current time).
 #' @param max_run_length Truncation level for run-length support.
 #' @param hazard_args Named list forwarded to hazard if hazard is a function.

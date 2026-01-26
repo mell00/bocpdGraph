@@ -95,3 +95,51 @@ test_that("hazard_from_pmf matches definition and handles tails", {
   expect_error(hazard_from_pmf(c(1, 1), tail_hazard = 1.5), "\\[0,1\\]")
 })
 
+
+
+test_that("All hazards return length(run_length) and stay in [0,1] under random stress", {
+  set.seed(123)
+
+  hazards <- list(
+    hazard_constant(0.01),
+    hazard_piecewise_time(times = c(10, 20, 30), p = c(0.1, 0.2, 0.3, 0.4)),
+    hazard_logistic_run_length(a = -5, b = 0.1),
+    hazard_from_pmf(c(0.1, 0.2, 0.3, 0.4), tail_hazard = 0.05)
+  )
+
+  hazard_names <- c("constant", "piecewise_time", "logistic_run_length", "from_pmf")
+
+  for (i in seq_along(hazards)) {
+    h <- hazards[[i]]
+    name <- hazard_names[[i]]
+
+    fail_msg <- NULL
+
+    for (iter in 1:200) {
+      n <- sample.int(50, 1)
+      r <- sample.int(200, n, replace = TRUE) - 1L
+      t <- sample.int(1000, 1)
+
+      out <- h(r, t = t)
+
+      if (length(out) != length(r)) {
+        fail_msg <- sprintf("iter=%d length(out)=%d != length(r)=%d", iter, length(out), length(r))
+        break
+      }
+      if (!all(is.finite(out))) {
+        fail_msg <- sprintf("iter=%d non-finite values present", iter)
+        break
+      }
+      if (!all(out >= 0 & out <= 1)) {
+        bad <- which(!(out >= 0 & out <= 1))[1]
+        fail_msg <- sprintf("iter=%d out of bounds at index %d: %g", iter, bad, out[[bad]])
+        break
+      }
+    }
+
+    expect_true(
+      is.null(fail_msg),
+      info = paste0("Hazard '", name, "' failed: ", fail_msg)
+    )
+  }
+})

@@ -89,7 +89,14 @@ hazard_piecewise_time <- function(times, p) {
       stop("`t` must be a single finite number.", call. = FALSE)
     }
     t <- as.integer(t)
-    idx <- if (length(times) == 0L) 1L else (findInterval(t, times) + 1L)
+
+    idx <- if (length(times) == 0L) {
+      1L
+    } else {
+      # intervals: (-Inf, times[1]] -> 0, (times[1], times[2]] -> 1, ..., (times[K], Inf) -> K
+      findInterval(t, times, left.open = TRUE) + 1L
+    }
+
     rep(p[[idx]], length(run_length))
   }
 }

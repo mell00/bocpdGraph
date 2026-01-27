@@ -40,3 +40,23 @@ test_that("bocpd run-length posterior invariants hold (nonneg, sums to 1, finite
   }
 })
 
+
+
+test_that("bocpd respects r_max truncation exactly", {
+  set.seed(1)
+  model <- gaussian_iid_model(mu0 = 0, sigma = 1)
+  h <- hazard_constant(1/100)
+
+  x <- rnorm(80)
+
+  # r_max = 10  => length(rl_t) <= 11 for all t
+  fit1 <- bocpd(x, model, h, control = list(r_max = 10, prune_eps = 0))
+  lens1 <- vapply(fit1$rl, length, integer(1))
+  expect_true(all(lens1 <= 11L))
+
+  # r_max = 0 => only r=0 kept: length == 1 and value == 1
+  fit2 <- bocpd(x, model, h, control = list(r_max = 0, prune_eps = 0))
+  lens2 <- vapply(fit2$rl, length, integer(1))
+  expect_true(all(lens2 == 1L))
+  expect_true(all(vapply(fit2$rl, function(v) isTRUE(all.equal(v[1], 1, tolerance = 1e-12)), logical(1))))
+})

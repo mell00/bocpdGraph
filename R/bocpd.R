@@ -10,8 +10,8 @@
 #' @param model A model object with methods \code{model_init()} and
 #'   \code{model_update()}, and internal components \code{pred_loglik} and
 #'   \code{prior}. See Details.
-#' @param hazard A function \code{hazard(r)} returning the hazard probability for
-#'   run lengths \code{r} (non-negative integers). For a constant hazard use
+#' @param hazard A function \code{hazard(run_length, t, ...)} returning the hazard
+#'   probabilities for run lengths \code{run_length}. For a constant hazard use
 #'   \code{hazard_constant()}.
 #' @param control Optional list of controls:
 #'   \itemize{
@@ -48,8 +48,8 @@
 #' @examples
 #' set.seed(1)
 #' x <- rnorm(50)
-#' model <- gaussian_mean_model(mu0 = 0, kappa0 = 1, alpha0 = 1, beta0 = 1)
-#' h <- hazard_constant(100)
+#' model <- gaussian_iid_model(mu0 = 0, sigma = 1)
+#' h <- hazard_constant(1/100)
 #' fit <- bocpd(x, model, h, control = list(r_max = 200, prune_eps = 1e-12))
 #' length(fit$rl)
 #'
@@ -96,7 +96,7 @@ bocpd <- function(data, model, hazard, control = list()) {
     )
 
     # hazard evaluated at r_prev+1 per paper convention (H(rt-1+1))
-    hvals <- hazard(r_prev + 1L)
+    hvals <- hazard(run_length = r_prev + 1L, t = t)
     if (any(!is.finite(hvals)) || any(hvals < 0) || any(hvals > 1)) {
       stop("`hazard` must return probabilities in [0,1].", call. = FALSE)
     }
@@ -117,20 +117,43 @@ bocpd <- function(data, model, hazard, control = list()) {
       log_rl_new <- log_rl_new[seq_len(keep_len)]
     }
 
-    # normalize
+    # normalize (robust)
     log_Z <- .logsumexp(log_rl_new)
-    log_rl_new <- log_rl_new - log_Z
-    rl_new <- exp(log_rl_new)
+
+    # If all mass underflowed (or NaN), fall back to a valid distribution
+    if (!is.finite(log_Z)) {
+      rl_new <- numeric(length(log_rl_new))
+      rl_new[1L] <- 1
+      log_rl_new <- log(rl_new)
+    } else {
+      log_rl_new <- log_rl_new - log_Z
+      rl_new <- exp(log_rl_new)
+
+      # Guard against exp() overflow / NaNs / drift
+      if (any(!is.finite(rl_new))) {
+        rl_new <- numeric(length(log_rl_new))
+        rl_new[1L] <- 1
+        log_rl_new <- log(rl_new)
+      } else {
+        s <- sum(rl_new)
+        if (!is.finite(s) || s <= 0) {
+          rl_new <- numeric(length(log_rl_new))
+          rl_new[1L] <- 1
+          log_rl_new <- log(rl_new)
+        } else {
+          rl_new <- rl_new / s
+          log_rl_new <- log(rl_new)
+        }
+      }
+    }
 
     # optional pruning (after normalization)
     if (is.numeric(ctrl$prune_eps) && ctrl$prune_eps > 0) {
       keep <- rl_new > ctrl$prune_eps
-      # always keep r=0
       keep[1L] <- TRUE
       rl_new <- rl_new[keep]
       rl_new <- rl_new / sum(rl_new)
       log_rl_new <- log(rl_new)
-      # NOTE: state pruning is handled by updating state first, then pruning consistently below.
       prune_keep <- keep
     } else {
       prune_keep <- rep(TRUE, length(rl_new))
@@ -164,6 +187,7 @@ bocpd <- function(data, model, hazard, control = list()) {
   if (!is.null(rl_mat)) out$rl_matrix <- rl_mat
   out
 }
+
 
 # stable log-sum-exp for numeric vectors
 .logsumexp <- function(x) {

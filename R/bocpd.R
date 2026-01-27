@@ -63,124 +63,43 @@ bocpd <- function(data, model, hazard, control = list()) {
     control
   )
 
-  # normalize input to list for consistent indexing
   if (!is.list(data)) data <- as.list(data)
 
   # init run-length posterior at t=0: P(r0=0)=1
-  log_rl <- 0  # log(1)
+  log_rl <- 0
   state <- model_init(model)
 
   rl_list <- vector("list", length(data))
 
-  # optional dense storage
   rl_mat <- NULL
   if (isTRUE(ctrl$return_rl_matrix)) {
-    # r_t <= t, and also <= r_max
     Tn <- length(data)
     Rn <- min(Tn, if (is.finite(ctrl$r_max)) as.integer(ctrl$r_max) else Tn)
-    rl_mat <- matrix(0, nrow = Tn, ncol = Rn + 1) # columns: r=0..Rn
+    rl_mat <- matrix(0, nrow = Tn, ncol = Rn + 1)
   }
 
   for (t in seq_along(data)) {
-
-    x_t <- data[[t]]
-
-    # current support is r = 0..(length(log_rl)-1)
-    r_prev <- seq_len(length(log_rl)) - 1L
-
-    # predictive loglik for each hypothesis (aligned with r_prev)
-    log_pred <- vapply(
-      seq_along(state$nu),
-      function(i) model$pred_loglik(state$nu[i], state$chi[[i]], x_t),
-      numeric(1)
+    step <- bocpd_step(
+      log_rl = log_rl,
+      state  = state,
+      x_t    = data[[t]],
+      model  = model,
+      hazard = hazard,
+      t      = t,
+      r_max  = ctrl$r_max,
+      prune_eps = ctrl$prune_eps
     )
 
-    # hazard evaluated at r_prev+1 per paper convention (H(rt-1+1))
-    hvals <- hazard(run_length = r_prev + 1L, t = t)
-    if (any(!is.finite(hvals)) || any(hvals < 0) || any(hvals > 1)) {
-      stop("`hazard` must return probabilities in [0,1].", call. = FALSE)
-    }
+    rl_list[[t]] <- step$rl
 
-    # message passing in log space
-    # growth: r_t = r_prev + 1
-    log_growth <- log_rl + log1p(-hvals) + log_pred
-
-    # changepoint: r_t = 0 is logsumexp over all previous hypotheses
-    log_cp <- .logsumexp(log_rl + log(hvals) + log_pred)
-
-    # new joint over r_t: (0, 1..)
-    log_rl_new <- c(log_cp, log_growth)
-
-    # truncate by r_max (keep r=0..r_max)
-    if (is.finite(ctrl$r_max)) {
-      keep_len <- min(length(log_rl_new), as.integer(ctrl$r_max) + 1L)
-      log_rl_new <- log_rl_new[seq_len(keep_len)]
-    }
-
-    # normalize (robust)
-    log_Z <- .logsumexp(log_rl_new)
-
-    # If all mass underflowed (or NaN), fall back to a valid distribution
-    if (!is.finite(log_Z)) {
-      rl_new <- numeric(length(log_rl_new))
-      rl_new[1L] <- 1
-      log_rl_new <- log(rl_new)
-    } else {
-      log_rl_new <- log_rl_new - log_Z
-      rl_new <- exp(log_rl_new)
-
-      # Guard against exp() overflow / NaNs / drift
-      if (any(!is.finite(rl_new))) {
-        rl_new <- numeric(length(log_rl_new))
-        rl_new[1L] <- 1
-        log_rl_new <- log(rl_new)
-      } else {
-        s <- sum(rl_new)
-        if (!is.finite(s) || s <= 0) {
-          rl_new <- numeric(length(log_rl_new))
-          rl_new[1L] <- 1
-          log_rl_new <- log(rl_new)
-        } else {
-          rl_new <- rl_new / s
-          log_rl_new <- log(rl_new)
-        }
-      }
-    }
-
-    # optional pruning (after normalization)
-    if (is.numeric(ctrl$prune_eps) && ctrl$prune_eps > 0) {
-      keep <- rl_new > ctrl$prune_eps
-      keep[1L] <- TRUE
-      rl_new <- rl_new[keep]
-      rl_new <- rl_new / sum(rl_new)
-      log_rl_new <- log(rl_new)
-      prune_keep <- keep
-    } else {
-      prune_keep <- rep(TRUE, length(rl_new))
-    }
-
-    # update sufficient stats for next step (prepend prior for r=0, shift others)
-    state_new <- model_update(model, state, x_t)
-
-    # align state length to rl_new length, then apply pruning mask
-    if (length(state_new$nu) < length(log_rl_new)) {
-      stop("Model state shorter than run-length support after update.", call. = FALSE)
-    }
-    state_new$nu  <- state_new$nu[seq_len(length(log_rl_new))]
-    state_new$chi <- state_new$chi[seq_len(length(log_rl_new))]
-    state_new$nu  <- state_new$nu[prune_keep]
-    state_new$chi <- state_new$chi[prune_keep]
-
-    # save and roll forward
-    rl_list[[t]] <- rl_new
     if (!is.null(rl_mat)) {
       Rn <- ncol(rl_mat) - 1L
-      fill <- min(length(rl_new), Rn + 1L)
-      rl_mat[t, seq_len(fill)] <- rl_new[seq_len(fill)]
+      fill <- min(length(step$rl), Rn + 1L)
+      rl_mat[t, seq_len(fill)] <- step$rl[seq_len(fill)]
     }
 
-    log_rl <- log(rl_new)
-    state <- state_new
+    log_rl <- step$log_rl
+    state  <- step$state
   }
 
   out <- list(rl = rl_list, state = state)
@@ -188,29 +107,16 @@ bocpd <- function(data, model, hazard, control = list()) {
   out
 }
 
-
-# stable log-sum-exp for numeric vectors
-.logsumexp <- function(x) {
-  m <- max(x)
-  if (!is.finite(m)) return(m)
-  m + log(sum(exp(x - m)))
-}
-
-
-
-
 #' Estimate changepoint locations from BOCPD output
 #'
 #' Provides simple changepoint extraction heuristics from the run-length
-#' posterior returned by \code{\link{bocpd}}. These heuristics are intended
-#' for quick summarization of the posterior and do not modify the underlying
-#' BOCPD recursion.
+#' posterior returned by \code{\link{bocpd}}.
 #'
 #' The changepoint selection heuristics implemented here are inspired by
 #' the post-processing procedures described in Bretz (2021), which proposes
 #' identifying changepoints either via elevated posterior mass at
 #' \eqn{r_t = 0} or via sharp drops in the maximum a posteriori (MAP)
-#' run length. These heuristics operate *after* the BOCPD recursion and do
+#' run length. These heuristics operate after the BOCPD recursion and do
 #' not alter the underlying Bayesian filtering algorithm of
 #' Adams and MacKay (2007).
 #'
@@ -239,8 +145,8 @@ bocpd <- function(data, model, hazard, control = list()) {
 #' @examples
 #' set.seed(1)
 #' x <- c(rnorm(50, 0), rnorm(50, 3))
-#' model <- gaussian_mean_model(mu0 = 0, kappa0 = 1, alpha0 = 1, beta0 = 1)
-#' h <- hazard_constant(100)
+#' model <- gaussian_iid_model(mu0 = 0, sigma = 1)
+#' h <- hazard_constant(1/100)
 #' fit <- bocpd(x, model, h, control = list(r_max = 200, prune_eps = 1e-12))
 #' bocpd_changepoints(fit, method = "cp_prob", threshold = 0.3)
 #'
@@ -254,15 +160,12 @@ bocpd_changepoints <- function(fit,
   min_sep <- as.integer(min_sep)
   if (min_sep < 1L) stop("`min_sep` must be >= 1.", call. = FALSE)
 
-  # Extract run-length posteriors as a list of numeric vectors
   if (!is.null(fit$rl)) {
     rl_list <- fit$rl
   } else if (!is.null(fit$rl_matrix)) {
-    # convert each row to a vector, trimming trailing zeros
     rl_mat <- fit$rl_matrix
     rl_list <- lapply(seq_len(nrow(rl_mat)), function(i) {
       v <- rl_mat[i, ]
-      # keep up to last positive entry (or keep r=0)
       k <- max(which(v > 0), 1L)
       v[seq_len(k)]
     })
@@ -282,10 +185,10 @@ bocpd_changepoints <- function(fit,
            call. = FALSE)
     }
 
-    score <- vapply(rl_list, function(v) v[1L], numeric(1)) # P(r_t=0)
+    score <- vapply(rl_list, function(v) v[1L], numeric(1))
     idx <- which(score >= threshold)
 
-  } else { # method == "map_drop"
+  } else {
 
     if (is.null(threshold)) threshold <- 10
     if (!is.numeric(threshold) || length(threshold) != 1L || threshold < 0) {
@@ -293,24 +196,15 @@ bocpd_changepoints <- function(fit,
            call. = FALSE)
     }
 
-    map_rl <- vapply(rl_list, function(v) {
-      # run length values are r=0..(len-1)
-      as.integer(which.max(v) - 1L)
-    }, integer(1))
-
-    drop <- c(0L, pmax.int(0L, map_rl[-1L] - map_rl[-Tn]) * -1L)
-    # drop is negative where MAP decreases; convert to positive magnitude
-    score <- c(0, pmax(0, map_rl[-1L] < map_rl[-Tn]) * (map_rl[-Tn] - map_rl[-1L]))
-    score <- c(0, score)
-
+    map_rl <- vapply(rl_list, function(v) as.integer(which.max(v) - 1L), integer(1))
+    score <- c(0, pmax(0, map_rl[-Tn] - map_rl[-1L]))  # previous - current when drop
     idx <- which(score >= threshold)
   }
 
   if (length(idx) == 0L) return(integer(0))
 
-  # Enforce min separation by keeping strongest within each window
   if (min_sep > 1L) {
-    ord <- idx[order(-score[idx], idx)]  # strongest first, stable by time
+    ord <- idx[order(-score[idx], idx)]
     keep <- logical(Tn)
     out <- integer(0)
     for (i in ord) {
@@ -326,5 +220,4 @@ bocpd_changepoints <- function(fit,
 
   idx
 }
-
 

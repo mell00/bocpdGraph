@@ -100,3 +100,17 @@ test_that("bocpd handles extreme observations without NaN/Inf posteriors", {
 })
 
 
+test_that("near-zero and near-one hazards behave sensibly", {
+  set.seed(3)
+  model <- gaussian_iid_model(mu0 = 0, sigma = 1)
+
+  x <- rnorm(30)
+
+  h0 <- function(run_length, t, ...) rep(1e-12, length(run_length))
+  fit0 <- bocpd(x, model, h0, control = list(r_max = 200, prune_eps = 0))
+  expect_lt(fit0$rl[[30]][1], 1e-6)
+
+  h1 <- function(run_length, t, ...) rep(1 - 1e-12, length(run_length))
+  fit1 <- bocpd(x, model, h1, control = list(r_max = 200, prune_eps = 0))
+  expect_gt(fit1$rl[[30]][1], 0.9)
+})

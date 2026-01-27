@@ -171,3 +171,136 @@ bocpd <- function(data, model, hazard, control = list()) {
   if (!is.finite(m)) return(m)
   m + log(sum(exp(x - m)))
 }
+
+
+
+
+#' Estimate changepoint locations from BOCPD output
+#'
+#' Provides simple changepoint extraction heuristics from the run-length
+#' posterior returned by \code{\link{bocpd}}. These heuristics are intended
+#' for quick summarization of the posterior and do not modify the underlying
+#' BOCPD recursion.
+#'
+#' The changepoint selection heuristics implemented here are inspired by
+#' the post-processing procedures described in Bretz (2021), which proposes
+#' identifying changepoints either via elevated posterior mass at
+#' \eqn{r_t = 0} or via sharp drops in the maximum a posteriori (MAP)
+#' run length. These heuristics operate *after* the BOCPD recursion and do
+#' not alter the underlying Bayesian filtering algorithm of
+#' Adams and MacKay (2007).
+#'
+#' Two methods are available:
+#' \itemize{
+#'   \item \code{"cp_prob"}: selects times where \eqn{P(r_t=0 \mid x_{1:t})}
+#'         exceeds \code{threshold}.
+#'   \item \code{"map_drop"}: selects times where the MAP run length decreases
+#'         by at least \code{threshold} compared to the previous time step.
+#' }
+#'
+#' @param fit Output from \code{\link{bocpd}} (a list with element \code{rl}),
+#'   or a list with element \code{rl_matrix}.
+#' @param method Character; one of \code{"cp_prob"} or \code{"map_drop"}.
+#' @param threshold Numeric threshold. Interpretation depends on \code{method}:
+#'   \itemize{
+#'     \item \code{"cp_prob"}: probability in \eqn{[0,1]} (default \code{0.5}).
+#'     \item \code{"map_drop"}: non-negative drop in MAP run length (default \code{10}).
+#'   }
+#' @param min_sep Integer; minimum separation (in time points) between returned
+#'   changepoints. When multiple candidates occur within \code{min_sep}, the
+#'   strongest one (largest score) is kept. Default is \code{1} (no filtering).
+#'
+#' @return Integer vector of time indices (1-based) flagged as changepoints.
+#'
+#' @examples
+#' set.seed(1)
+#' x <- c(rnorm(50, 0), rnorm(50, 3))
+#' model <- gaussian_mean_model(mu0 = 0, kappa0 = 1, alpha0 = 1, beta0 = 1)
+#' h <- hazard_constant(100)
+#' fit <- bocpd(x, model, h, control = list(r_max = 200, prune_eps = 1e-12))
+#' bocpd_changepoints(fit, method = "cp_prob", threshold = 0.3)
+#'
+#' @export
+bocpd_changepoints <- function(fit,
+                               method = c("cp_prob", "map_drop"),
+                               threshold = NULL,
+                               min_sep = 1L) {
+
+  method <- match.arg(method)
+  min_sep <- as.integer(min_sep)
+  if (min_sep < 1L) stop("`min_sep` must be >= 1.", call. = FALSE)
+
+  # Extract run-length posteriors as a list of numeric vectors
+  if (!is.null(fit$rl)) {
+    rl_list <- fit$rl
+  } else if (!is.null(fit$rl_matrix)) {
+    # convert each row to a vector, trimming trailing zeros
+    rl_mat <- fit$rl_matrix
+    rl_list <- lapply(seq_len(nrow(rl_mat)), function(i) {
+      v <- rl_mat[i, ]
+      # keep up to last positive entry (or keep r=0)
+      k <- max(which(v > 0), 1L)
+      v[seq_len(k)]
+    })
+  } else {
+    stop("`fit` must contain `rl` or `rl_matrix`.", call. = FALSE)
+  }
+
+  Tn <- length(rl_list)
+  if (Tn < 1L) return(integer(0))
+
+  if (method == "cp_prob") {
+
+    if (is.null(threshold)) threshold <- 0.5
+    if (!is.numeric(threshold) || length(threshold) != 1L ||
+        threshold < 0 || threshold > 1) {
+      stop("For method='cp_prob', `threshold` must be a single number in [0,1].",
+           call. = FALSE)
+    }
+
+    score <- vapply(rl_list, function(v) v[1L], numeric(1)) # P(r_t=0)
+    idx <- which(score >= threshold)
+
+  } else { # method == "map_drop"
+
+    if (is.null(threshold)) threshold <- 10
+    if (!is.numeric(threshold) || length(threshold) != 1L || threshold < 0) {
+      stop("For method='map_drop', `threshold` must be a single non-negative number.",
+           call. = FALSE)
+    }
+
+    map_rl <- vapply(rl_list, function(v) {
+      # run length values are r=0..(len-1)
+      as.integer(which.max(v) - 1L)
+    }, integer(1))
+
+    drop <- c(0L, pmax.int(0L, map_rl[-1L] - map_rl[-Tn]) * -1L)
+    # drop is negative where MAP decreases; convert to positive magnitude
+    score <- c(0, pmax(0, map_rl[-1L] < map_rl[-Tn]) * (map_rl[-Tn] - map_rl[-1L]))
+    score <- c(0, score)
+
+    idx <- which(score >= threshold)
+  }
+
+  if (length(idx) == 0L) return(integer(0))
+
+  # Enforce min separation by keeping strongest within each window
+  if (min_sep > 1L) {
+    ord <- idx[order(-score[idx], idx)]  # strongest first, stable by time
+    keep <- logical(Tn)
+    out <- integer(0)
+    for (i in ord) {
+      lo <- max(1L, i - min_sep + 1L)
+      hi <- min(Tn, i + min_sep - 1L)
+      if (!any(keep[lo:hi])) {
+        keep[i] <- TRUE
+        out <- c(out, i)
+      }
+    }
+    idx <- sort(out)
+  }
+
+  idx
+}
+
+

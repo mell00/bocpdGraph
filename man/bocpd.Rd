@@ -14,8 +14,8 @@ supplied it will be treated as a sequence of scalar observations.}
 \code{model_update()}, and internal components \code{pred_loglik} and
 \code{prior}. See Details.}
 
-\item{hazard}{A function \code{hazard(r)} returning the hazard probability for
-run lengths \code{r} (non-negative integers). For a constant hazard use
+\item{hazard}{A function \code{hazard(run_length, t, ...)} returning the hazard
+probabilities for run lengths \code{run_length}. For a constant hazard use
 \code{hazard_constant()}.}
 
 \item{control}{Optional list of controls:
@@ -60,8 +60,8 @@ run-length-shifted sufficient statistics (including prepending the prior).
 \examples{
 set.seed(1)
 x <- rnorm(50)
-model <- gaussian_mean_model(mu0 = 0, kappa0 = 1, alpha0 = 1, beta0 = 1)
-h <- hazard_constant(100)
+model <- gaussian_iid_model(mu0 = 0, sigma = 1)
+h <- hazard_constant(1/100)
 fit <- bocpd(x, model, h, control = list(r_max = 200, prune_eps = 1e-12))
 length(fit$rl)
 

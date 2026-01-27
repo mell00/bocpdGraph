@@ -39,6 +39,6 @@
 #' \emph{Bayesian Online Changepoint Detection}.
 #' Lecture notes / technical report.
 #'
-#' @docType package
+#' @docType _PACKAGE
 #' @name bocpdGraph-package
 NULL

@@ -1,23 +1,24 @@
 test_that("bocpd validates hazard contract", {
-  model <- gaussian_iid_model()
+  model <- gaussian_iid_model(mu0 = 0, sigma = 1)
 
   expect_error(
     bocpd(as.list(1:3), model, hazard = 1),
     "hazard.*function"
   )
 
-  bad_hazard1 <- function(r) rep(1.5, length(r))
+  bad_hazard1 <- function(run_length, t, ...) rep(1.5, length(run_length))
   expect_error(
     bocpd(as.list(1:3), model, bad_hazard1),
-    "\\[0,1\\]"
+    "hazard.*\\[0,1\\]"
   )
 
-  bad_hazard2 <- function(r) rep(NA_real_, length(r))
+  bad_hazard2 <- function(run_length, t, ...) rep(NA_real_, length(run_length))
   expect_error(
     bocpd(as.list(1:3), model, bad_hazard2),
-    "\\[0,1\\]"
+    "hazard.*\\[0,1\\]"
   )
 })
+
 
 
 test_that("bocpd run-length posterior invariants hold (nonneg, sums to 1, finite)", {
@@ -81,3 +82,5 @@ test_that("bocpd pruning removes tiny mass but keeps r=0 and renormalizes", {
     }
   }
 })
+
+

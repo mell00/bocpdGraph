@@ -166,3 +166,24 @@ test_that("bocpd_changepoints(map_drop) returns valid indices and is robust", {
 })
 
 
+test_that("bocpd returns expected structure (rl + state, optional rl_matrix)", {
+  set.seed(7)
+  model <- gaussian_iid_model(mu0 = 0, sigma = 1)
+  h <- hazard_constant(1/30)
+  x <- rnorm(25)
+
+  fit <- bocpd(x, model, h, control = list(return_rl_matrix = FALSE))
+  expect_true(is.list(fit))
+  expect_true("rl" %in% names(fit))
+  expect_true("state" %in% names(fit))
+  expect_false("rl_matrix" %in% names(fit))
+
+  fitm <- bocpd(x, model, h, control = list(r_max = 20, return_rl_matrix = TRUE))
+  expect_true("rl_matrix" %in% names(fitm))
+  expect_true(is.matrix(fitm$rl_matrix))
+  expect_equal(nrow(fitm$rl_matrix), length(x))
+  expect_equal(ncol(fitm$rl_matrix), 21)
+  rs <- rowSums(fitm$rl_matrix)
+  expect_true(all(abs(rs - 1) < 1e-10))
+})
+

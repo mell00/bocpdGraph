@@ -114,3 +114,21 @@ test_that("near-zero and near-one hazards behave sensibly", {
   fit1 <- bocpd(x, model, h1, control = list(r_max = 200, prune_eps = 0))
   expect_gt(fit1$rl[[30]][1], 0.9)
 })
+
+
+
+test_that("bocpd supports list input and vector input equivalently", {
+  set.seed(4)
+  model <- gaussian_iid_model(mu0 = 0, sigma = 1)
+  h <- hazard_constant(1/50)
+
+  x <- rnorm(40)
+  fit_vec <- bocpd(x, model, h, control = list(r_max = 80, prune_eps = 0))
+  fit_lst <- bocpd(as.list(x), model, h, control = list(r_max = 80, prune_eps = 0))
+
+  expect_equal(length(fit_vec$rl), length(fit_lst$rl))
+  for (t in c(1, 10, 40)) {
+    expect_equal(fit_vec$rl[[t]], fit_lst$rl[[t]], tolerance = 1e-12)
+  }
+})
+

@@ -132,3 +132,37 @@ test_that("bocpd supports list input and vector input equivalently", {
   }
 })
 
+
+
+test_that("bocpd_changepoints(cp_prob) returns valid indices and respects min_sep", {
+  set.seed(5)
+  x <- c(rnorm(60, 0), rnorm(60, 4))
+  model <- gaussian_iid_model(mu0 = 0, sigma = 1)
+  h <- hazard_constant(1/100)
+
+  fit <- bocpd(x, model, h, control = list(r_max = 200, prune_eps = 1e-12))
+
+  cps <- bocpd_changepoints(fit, method = "cp_prob", threshold = 0.2, min_sep = 10)
+  expect_true(is.integer(cps) || is.numeric(cps))
+  expect_true(all(cps >= 1 & cps <= length(x)))
+  if (length(cps) > 1) {
+    expect_true(all(diff(cps) >= 10))
+  }
+})
+
+test_that("bocpd_changepoints(map_drop) returns valid indices and is robust", {
+  set.seed(6)
+  x <- c(rnorm(40, 0), rnorm(40, 2), rnorm(40, -2))
+  model <- gaussian_iid_model(mu0 = 0, sigma = 1)
+  h <- hazard_constant(1/80)
+
+  fit <- bocpd(x, model, h, control = list(r_max = 250, prune_eps = 1e-14))
+
+  cps <- bocpd_changepoints(fit, method = "map_drop", threshold = 8, min_sep = 5)
+  expect_true(all(cps >= 1 & cps <= length(x)))
+  if (length(cps) > 1) {
+    expect_true(all(diff(cps) >= 5))
+  }
+})
+
+

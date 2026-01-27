@@ -84,3 +84,19 @@ test_that("bocpd pruning removes tiny mass but keeps r=0 and renormalizes", {
 })
 
 
+test_that("bocpd handles extreme observations without NaN/Inf posteriors", {
+  model <- gaussian_iid_model(mu0 = 0, sigma = 1)
+  h <- hazard_constant(1/100)
+
+  x <- c(0, 1e6, -1e6, 1e12, -1e12, 0)
+  fit <- bocpd(x, model, h, control = list(r_max = 50, prune_eps = 0))
+
+  for (t in seq_along(x)) {
+    rl <- fit$rl[[t]]
+    expect_true(all(is.finite(rl)))
+    expect_true(all(rl >= 0))
+    expect_equal(sum(rl), 1, tolerance = 1e-12)
+  }
+})
+
+

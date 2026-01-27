@@ -60,3 +60,24 @@ test_that("bocpd respects r_max truncation exactly", {
   expect_true(all(lens2 == 1L))
   expect_true(all(vapply(fit2$rl, function(v) isTRUE(all.equal(v[1], 1, tolerance = 1e-12)), logical(1))))
 })
+
+
+
+test_that("bocpd pruning removes tiny mass but keeps r=0 and renormalizes", {
+  set.seed(2)
+  model <- gaussian_iid_model(mu0 = 0, sigma = 1)
+  h <- hazard_constant(1/200)
+
+  x <- rnorm(150)
+  fit <- bocpd(x, model, h, control = list(r_max = 300, prune_eps = 1e-6))
+
+  for (t in c(10, 50, 150)) {
+    rl <- fit$rl[[t]]
+    expect_true(length(rl) >= 1L)
+    expect_equal(sum(rl), 1, tolerance = 1e-12)
+    expect_true(rl[1] > 0)
+    if (length(rl) > 1L) {
+      expect_true(all(rl[-1] > 1e-6))
+    }
+  }
+})

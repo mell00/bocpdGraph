@@ -53,6 +53,9 @@
 #' fit <- bocpd(x, model, h, control = list(r_max = 200, prune_eps = 1e-12))
 #' length(fit$rl)
 #'
+#'
+#' @importFrom utils modifyList
+#'
 #' @export
 bocpd <- function(data, model, hazard, control = list()) {
 

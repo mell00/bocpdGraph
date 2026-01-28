@@ -32,16 +32,14 @@ Integer vector of time indices (1-based) flagged as changepoints.
 }
 \description{
 Provides simple changepoint extraction heuristics from the run-length
-posterior returned by \code{\link{bocpd}}. These heuristics are intended
-for quick summarization of the posterior and do not modify the underlying
-BOCPD recursion.
+posterior returned by \code{\link{bocpd}}.
 }
 \details{
 The changepoint selection heuristics implemented here are inspired by
 the post-processing procedures described in Bretz (2021), which proposes
 identifying changepoints either via elevated posterior mass at
 \eqn{r_t = 0} or via sharp drops in the maximum a posteriori (MAP)
-run length. These heuristics operate \emph{after} the BOCPD recursion and do
+run length. These heuristics operate after the BOCPD recursion and do
 not alter the underlying Bayesian filtering algorithm of
 Adams and MacKay (2007).
 
@@ -56,8 +54,8 @@ by at least \code{threshold} compared to the previous time step.
 \examples{
 set.seed(1)
 x <- c(rnorm(50, 0), rnorm(50, 3))
-model <- gaussian_mean_model(mu0 = 0, kappa0 = 1, alpha0 = 1, beta0 = 1)
-h <- hazard_constant(100)
+model <- gaussian_iid_model(mu0 = 0, sigma = 1)
+h <- hazard_constant(1/100)
 fit <- bocpd(x, model, h, control = list(r_max = 200, prune_eps = 1e-12))
 bocpd_changepoints(fit, method = "cp_prob", threshold = 0.3)
 

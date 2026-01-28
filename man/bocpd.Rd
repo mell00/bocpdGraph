@@ -65,4 +65,5 @@ h <- hazard_constant(1/100)
 fit <- bocpd(x, model, h, control = list(r_max = 200, prune_eps = 1e-12))
 length(fit$rl)
 
+
 }

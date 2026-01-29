@@ -191,3 +191,18 @@ test_that("adjacency_to_neighbors() works for sparse Matrix", {
   expect_equal(nn$weights[[2]], c(2, 4))
   expect_equal(nn$neighbors[[3]], integer(0))
 })
+
+
+test_that("igraph inputs are supported when igraph is installed", {
+  skip_if_not_installed("igraph")
+  skip_if_not_installed("Matrix")
+
+  g <- igraph::make_ring(5, directed = FALSE)
+  A <- as_adjacency_matrix(g, directed = FALSE, allow_weights = FALSE)
+  expect_true(inherits(A, "Matrix") || is.matrix(A))
+  validate_adjacency(A, directed = FALSE)
+
+  s <- standardize_graph(g, directed = FALSE, allow_weights = FALSE)
+  expect_equal(s$n_nodes, 5)
+  expect_true(all(s$deg == 2L))
+})

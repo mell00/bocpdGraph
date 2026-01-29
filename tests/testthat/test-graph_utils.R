@@ -158,3 +158,19 @@ test_that("sparse undirected symmetrization uses elementwise max", {
   expect_equal(out[2, 3], 7)
   expect_equal(out[3, 2], 7)
 })
+
+
+test_that("sparse allow_weights=FALSE coerces all nonzeros to 1", {
+  skip_if_not_installed("Matrix")
+  A <- Matrix::sparseMatrix(
+    i = c(1, 1, 2),
+    j = c(2, 3, 3),
+    x = c(2, 5, 9),
+    dims = c(3, 3),
+    giveCsparse = TRUE
+  )
+  out <- as_adjacency_matrix(A, directed = TRUE, allow_weights = FALSE)
+  expect_true(inherits(out, "Matrix"))
+  expect_equal(sort(as.numeric(out@x)), c(1, 1, 1))
+})
+

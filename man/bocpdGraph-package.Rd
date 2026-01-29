@@ -54,7 +54,7 @@ Useful links:
 
 }
 \author{
-\strong{Maintainer}: First Last \email{first.last@example.com}
+\strong{Maintainer}: Madison Ell \email{mell@stats.tamu.edu}
 
 }
 \keyword{internal}

@@ -11,9 +11,11 @@ RoxygenNote: 7.3.3
 Suggests: 
     knitr,
     rmarkdown,
+    igraph
     testthat (>= 3.0.0)
 Imports:
     utils
+    Matrix
 Config/testthat/edition: 3
 URL: https://github.com/mell00/bocpdGraph
 BugReports: https://github.com/mell00/bocpdGraph/issues

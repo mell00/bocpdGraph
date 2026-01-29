@@ -206,3 +206,95 @@ test_that("igraph inputs are supported when igraph is installed", {
   expect_equal(s$n_nodes, 5)
   expect_true(all(s$deg == 2L))
 })
+
+
+test_that("test extreme edge cases: empty graph, isolated nodes, and duplicates in list", {
+  # Empty edges, 4 isolated nodes
+  A <- matrix(0, 4, 4)
+  s <- standardize_graph(A, directed = FALSE)
+  expect_equal(s$deg, rep(0L, 4))
+  expect_equal(s$wdeg, rep(0, 4))
+
+  # adjacency list with duplicate neighbors should still produce 1s
+  g <- list(c(2L, 2L, 3L), integer(0), integer(0))
+  A2 <- as_adjacency_matrix(g, n_nodes = 3, directed = TRUE, allow_weights = FALSE)
+  expect_equal(A2[1, 2], 1)
+  expect_equal(A2[1, 3], 1)
+})
+
+
+test_that("randomized adversarial base matrices do not stress algorithm", {
+  set.seed(1)
+
+  fails <- character()
+  for (iter in 1:50) {
+    n <- sample(2:10, 1)
+    A <- matrix(sample(c(0, 0, 0, 1, 2, 5), n * n, replace = TRUE), n, n)
+    diag(A) <- sample(c(0, 0, 0, 1), n, replace = TRUE)
+
+    if (any(diag(A) != 0)) {
+      ok <- tryCatch({
+        validate_adjacency(A, directed = TRUE)
+        FALSE
+      }, error = function(e) grepl("zero diagonal", conditionMessage(e)))
+      if (!ok) fails <- c(fails, sprintf("iter=%d: expected zero-diagonal error", iter))
+      next
+    }
+
+    ok <- tryCatch({
+      validate_adjacency(A, directed = TRUE)
+      out1 <- as_adjacency_matrix(A, directed = TRUE, allow_weights = TRUE)
+      out0 <- as_adjacency_matrix(A, directed = TRUE, allow_weights = FALSE)
+
+      if (!all(out0 %in% c(0, 1))) stop("allow_weights=FALSE not binary")
+      if (!all(diag(out1) == 0)) stop("diagonal not zeroed")
+
+      TRUE
+    }, error = function(e) {
+      fails <<- c(fails, sprintf("iter=%d: %s", iter, conditionMessage(e)))
+      FALSE
+    })
+
+    if (!ok) next
+  }
+
+  expect_true(length(fails) == 0, info = paste(fails, collapse = "\n"))
+})
+
+
+test_that("randomized adversarial sparse matrices do not stress algorithm", {
+  skip_if_not_installed("Matrix")
+  set.seed(2)
+
+  fails <- character()
+  for (iter in 1:50) {
+    n <- sample(3:20, 1)
+    nnz <- sample(0:(n * 2), 1)
+
+    A <- if (nnz == 0) {
+      Matrix::sparseMatrix(i = integer(0), j = integer(0), x = numeric(0), dims = c(n, n))
+    } else {
+      i <- sample(1:n, nnz, replace = TRUE)
+      j <- sample(1:n, nnz, replace = TRUE)
+      x <- sample(c(0.5, 1, 2, 5), nnz, replace = TRUE)
+      Matrix::sparseMatrix(i = i, j = j, x = x, dims = c(n, n), giveCsparse = TRUE)
+    }
+
+    # inject a diagonal entry; should be stripped
+    A[sample.int(n, 1), sample.int(n, 1)] <- 3
+
+    tryCatch({
+      out <- as_adjacency_matrix(A, directed = FALSE, allow_weights = TRUE)
+      if (!inherits(out, "Matrix")) stop("output not Matrix")
+      if (!all(as.numeric(Matrix::diag(out)) == 0)) stop("diagonal not zeroed")
+
+      nn <- adjacency_to_neighbors(out, include_weights = TRUE)
+      if (length(nn$neighbors) != n) stop("neighbors length mismatch")
+      if (length(nn$weights) != n) stop("weights length mismatch")
+    }, error = function(e) {
+      fails <<- c(fails, sprintf("iter=%d: %s", iter, conditionMessage(e)))
+    })
+  }
+
+  expect_true(length(fails) == 0, info = paste(fails, collapse = "\n"))
+})

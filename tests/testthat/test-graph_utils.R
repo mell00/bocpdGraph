@@ -92,3 +92,16 @@ test_that("adjacency_to_neighbors() works for base matrices", {
   expect_equal(nn$neighbors[[3]], integer(0))
   expect_equal(nn$weights[[3]], numeric(0))
 })
+
+
+test_that("standardize_graph() returns consistent structure", {
+  A <- matrix(c(0, 1, 0,
+                0, 0, 2,
+                0, 0, 0), 3, 3, byrow = TRUE)
+
+  s <- standardize_graph(A, directed = TRUE, allow_weights = TRUE)
+  expect_true(is.list(s))
+  expect_equal(s$n_nodes, 3)
+  expect_equal(s$deg, c(1L, 1L, 0L))
+  expect_equal(s$wdeg, c(1, 2, 0))
+})

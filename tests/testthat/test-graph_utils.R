@@ -14,3 +14,14 @@ test_that("as_adjacency_matrix() validates square base matrices", {
   expect_true(is.matrix(out))
   expect_equal(diag(out), c(0, 0))
 })
+
+
+test_that("as_adjacency_matrix() removes self-loops and symmetrizes when undirected", {
+  A <- matrix(c(1, 2,
+                0, 3), 2, 2, byrow = TRUE)
+  out <- as_adjacency_matrix(A, directed = FALSE, allow_weights = TRUE)
+  expect_equal(diag(out), c(0, 0))
+  expect_equal(out[1, 2], 2)
+  expect_equal(out[2, 1], 2) # symmetrized via max
+})
+

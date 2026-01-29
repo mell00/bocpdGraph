@@ -174,3 +174,20 @@ test_that("sparse allow_weights=FALSE coerces all nonzeros to 1", {
   expect_equal(sort(as.numeric(out@x)), c(1, 1, 1))
 })
 
+
+test_that("adjacency_to_neighbors() works for sparse Matrix", {
+  skip_if_not_installed("Matrix")
+  A <- Matrix::sparseMatrix(
+    i = c(1, 2, 2),
+    j = c(2, 1, 3),
+    x = c(2, 2, 4),
+    dims = c(3, 3),
+    giveCsparse = TRUE
+  )
+  nn <- adjacency_to_neighbors(A, include_weights = TRUE)
+  expect_equal(nn$neighbors[[1]], c(2L))
+  expect_equal(nn$weights[[1]], c(2))
+  expect_equal(nn$neighbors[[2]], c(1L, 3L))
+  expect_equal(nn$weights[[2]], c(2, 4))
+  expect_equal(nn$neighbors[[3]], integer(0))
+})

@@ -94,11 +94,13 @@ as_adjacency_matrix <- function(graph,
     A <- matrix(0, nrow = n_nodes, ncol = n_nodes)
     for (i in seq_len(n_nodes)) {
       nbrs <- graph[[i]]
+      if (is.logical(nbrs)) {
+        stop("Adjacency list entries must be integer indices, not logical.")
+      }
+      if (length(nbrs) == 0) next
       if (!is.numeric(nbrs) && !is.integer(nbrs)) {
         stop("Adjacency list entries must be integer indices.")
       }
-      if (length(nbrs) == 0) next
-      if (is.logical(nbrs)) stop("Adjacency list entries must be integer indices, not logical.")
       nbrs <- as.integer(nbrs)
       nbrs <- nbrs[!is.na(nbrs)]
       if (any(nbrs < 1L | nbrs > n_nodes)) stop("Adjacency list contains out-of-range node indices.")

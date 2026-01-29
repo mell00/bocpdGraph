@@ -37,6 +37,10 @@ as_adjacency_matrix <- function(graph,
                                 n_nodes = NULL,
                                 allow_weights = TRUE,
                                 directed = FALSE) {
+  if (is.data.frame(graph)) {
+    stop("Unsupported `graph` type: data.frame. Provide a matrix, Matrix, adjacency list, or igraph object.")
+  }
+
   if (is.matrix(graph) && !inherits(graph, "Matrix")) {
     A <- graph
     if (!is.numeric(A)) A <- suppressWarnings(matrix(as.numeric(A), nrow = nrow(A)))
@@ -90,6 +94,9 @@ as_adjacency_matrix <- function(graph,
     A <- matrix(0, nrow = n_nodes, ncol = n_nodes)
     for (i in seq_len(n_nodes)) {
       nbrs <- graph[[i]]
+      if (!is.numeric(nbrs) && !is.integer(nbrs)) {
+        stop("Adjacency list entries must be integer indices.")
+      }
       if (length(nbrs) == 0) next
       if (is.logical(nbrs)) stop("Adjacency list entries must be integer indices, not logical.")
       nbrs <- as.integer(nbrs)

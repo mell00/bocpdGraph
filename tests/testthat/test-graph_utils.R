@@ -80,3 +80,15 @@ test_that("as_adjacency_matrix() supports adjacency lists with range checking", 
 
 
 
+test_that("adjacency_to_neighbors() works for base matrices", {
+  A <- matrix(c(0, 2, 0,
+                2, 0, 3,
+                0, 0, 0), 3, 3, byrow = TRUE)
+  nn <- adjacency_to_neighbors(A, include_weights = TRUE)
+  expect_equal(nn$neighbors[[1]], c(2L))
+  expect_equal(nn$weights[[1]], c(2))
+  expect_equal(nn$neighbors[[2]], c(1L, 3L))
+  expect_equal(nn$weights[[2]], c(2, 3))
+  expect_equal(nn$neighbors[[3]], integer(0))
+  expect_equal(nn$weights[[3]], numeric(0))
+})

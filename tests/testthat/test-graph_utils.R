@@ -140,3 +140,21 @@ test_that("Matrix sparse adjacency is supported without densifying and checks ar
   B[2, 3] <- -1
   expect_error(validate_adjacency(B, directed = TRUE), "nonnegative")
 })
+
+
+test_that("sparse undirected symmetrization uses elementwise max", {
+  skip_if_not_installed("Matrix")
+  A <- Matrix::sparseMatrix(
+    i = c(1, 2),
+    j = c(2, 3),
+    x = c(2, 7),
+    dims = c(3, 3),
+    giveCsparse = TRUE
+  )
+  # t(A) has different nonzeros; max should include both
+  out <- as_adjacency_matrix(A, directed = FALSE, allow_weights = TRUE)
+  expect_equal(out[2, 1], 2)
+  expect_equal(out[1, 2], 2)
+  expect_equal(out[2, 3], 7)
+  expect_equal(out[3, 2], 7)
+})

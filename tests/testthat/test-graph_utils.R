@@ -43,3 +43,26 @@ test_that("as_adjacency_matrix() replaces NA with 0 (base) and rejects Inf", {
   expect_error(as_adjacency_matrix(B), "non-finite")
 })
 
+
+test_that("validate_adjacency() rejects negatives, self-loops, non-square", {
+  A <- matrix(c(0, -1,
+                0,  0), 2, 2, byrow = TRUE)
+  expect_error(validate_adjacency(A, directed = TRUE), "nonnegative")
+
+  B <- matrix(c(1, 0,
+                0, 0), 2, 2)
+  expect_error(validate_adjacency(B, directed = TRUE), "zero diagonal")
+
+  C <- matrix(0, 2, 3)
+  expect_error(validate_adjacency(C, directed = TRUE), "square")
+})
+
+
+test_that("validate_adjacency() symmetry enforcement works", {
+  A <- matrix(c(0, 1,
+                0, 0), 2, 2, byrow = TRUE)
+  expect_error(validate_adjacency(A, directed = FALSE), "symmetric")
+  expect_silent(validate_adjacency(A, directed = TRUE))
+})
+
+

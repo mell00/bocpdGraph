@@ -105,3 +105,15 @@ test_that("standardize_graph() returns consistent structure", {
   expect_equal(s$deg, c(1L, 1L, 0L))
   expect_equal(s$wdeg, c(1, 2, 0))
 })
+
+
+test_that("standardize_graph() symmetrizes when directed=FALSE", {
+  A <- matrix(c(0, 0, 0,
+                5, 0, 0,
+                0, 0, 0), 3, 3, byrow = TRUE)
+  s <- standardize_graph(A, directed = FALSE, allow_weights = TRUE)
+  expect_equal(s$A[1, 2], 5)
+  expect_equal(s$A[2, 1], 5)
+  expect_equal(s$deg[1], 1L)
+  expect_equal(s$deg[2], 1L)
+})

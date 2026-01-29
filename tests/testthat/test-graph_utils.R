@@ -117,3 +117,26 @@ test_that("standardize_graph() symmetrizes when directed=FALSE", {
   expect_equal(s$deg[1], 1L)
   expect_equal(s$deg[2], 1L)
 })
+
+
+test_that("Matrix sparse adjacency is supported without densifying and checks are enforced", {
+  skip_if_not_installed("Matrix")
+  A <- Matrix::sparseMatrix(
+    i = c(1, 2, 2),
+    j = c(2, 1, 3),
+    x = c(1, 1, 4),
+    dims = c(3, 3),
+    giveCsparse = TRUE
+  )
+  # add an explicit diagonal nonzero to ensure it gets removed
+  A[1, 1] <- 9
+
+  out <- as_adjacency_matrix(A, directed = TRUE, allow_weights = TRUE)
+  expect_true(inherits(out, "Matrix"))
+  expect_equal(as.numeric(Matrix::diag(out)), c(0, 0, 0))
+
+  # validate rejects negative nonzeros
+  B <- A
+  B[2, 3] <- -1
+  expect_error(validate_adjacency(B, directed = TRUE), "nonnegative")
+})

@@ -66,3 +66,17 @@ test_that("validate_adjacency() symmetry enforcement works", {
 })
 
 
+test_that("as_adjacency_matrix() supports adjacency lists with range checking", {
+  g <- list(c(2L), integer(0))
+  A <- as_adjacency_matrix(g, n_nodes = 2, directed = TRUE)
+  expect_equal(A, matrix(c(0, 1, 0, 0), 2, 2, byrow = TRUE))
+
+  g_bad <- list(c(3L), integer(0))
+  expect_error(as_adjacency_matrix(g_bad, n_nodes = 2), "out-of-range")
+
+  g_logical <- list(c(TRUE, FALSE), integer(0))
+  expect_error(as_adjacency_matrix(g_logical, n_nodes = 2), "not logical")
+})
+
+
+

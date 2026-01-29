@@ -25,3 +25,21 @@ test_that("as_adjacency_matrix() removes self-loops and symmetrizes when undirec
   expect_equal(out[2, 1], 2) # symmetrized via max
 })
 
+
+test_that("as_adjacency_matrix() with allow_weights=FALSE coerces to 0/1", {
+  A <- matrix(c(0, 2,
+                0, 0), 2, 2, byrow = TRUE)
+  out <- as_adjacency_matrix(A, allow_weights = FALSE, directed = TRUE)
+  expect_equal(out, matrix(c(0, 1, 0, 0), 2, 2, byrow = TRUE))
+})
+
+
+test_that("as_adjacency_matrix() replaces NA with 0 (base) and rejects Inf", {
+  A <- matrix(c(0, NA, 0, 0), 2, 2)
+  out <- as_adjacency_matrix(A, directed = TRUE)
+  expect_equal(out[1, 2], 0)
+
+  B <- matrix(c(0, Inf, 0, 0), 2, 2)
+  expect_error(as_adjacency_matrix(B), "non-finite")
+})
+

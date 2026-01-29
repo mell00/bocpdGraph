@@ -1,0 +1,217 @@
+---
+title: "Bayesian Online Changepoint Detection in bocpdGraph"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Bayesian Online Changepoint Detection in bocpdGraph}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+
+library(bocpdGraph)
+```
+
+## Overview
+
+The **bocpdGraph** package implements Bayesian Online Changepoint Detection
+(BOCPD) following Adams and MacKay (2007). The implementation adheres to the
+original two-branch run-length recursion while introducing safeguards required
+for numerical stability, extensibility, and long-running use.
+
+The package is organized around four core components:
+
+- Hazard functions (`hazard_*`)
+- Run-length recursion (internal, log scale)
+- The BOCPD update engine (`bocpd_engine`)
+- A user-facing interface (`bocpd`)
+
+Auxiliary helpers enforce probabilistic invariants and control computational
+complexity.
+
+---
+
+## Run-length recursion (internal)
+
+At time \(t\), the run length \(r_t\) denotes the number of observations since
+the most recent changepoint. Internally, **bocpdGraph** represents the run-length
+posterior as a numeric vector on the log scale,
+
+\[
+\log P(r_t \mid y_{1:t}), \quad r_t = 0, 1, \dots
+\]
+
+rather than as a user-facing object.
+
+Run-length updates are performed entirely in log space. The recursion implements:
+
+- **growth:** \(r \to r+1\) with probability \(1 - h(r, t)\)
+- **changepoint:** \(r \to 0\) with probability \(h(r, t)\)
+
+Likelihood evaluation is supplied externally by the observation model; the
+run-length utilities are likelihood-agnostic and graph-agnostic.
+
+Optional truncation and pruning approximate the exact recursion while preserving
+its probabilistic interpretation.
+
+---
+
+## Hazard functions
+
+### Concept
+
+The hazard function specifies the prior probability of a changepoint conditional
+on the current run length:
+
+\[
+H(r, t) = P(r_t = 0 \mid r_{t-1} = r).
+\]
+
+In **bocpdGraph**, hazards are supplied as functions of the form
+
+```
+h(run_length, t, ...)
+```
+
+returning probabilities in \([0,1]\). Several common hazard families are
+provided.
+
+### Constant (geometric) hazard
+
+```{r}
+h_const <- hazard_constant(0.01)
+h_const(0:5, t = 10)
+```
+
+### Time-varying hazard
+
+```{r}
+h_time <- hazard_piecewise_time(
+  times = c(50, 100),
+  p = c(0.01, 0.05, 0.02)
+)
+
+h_time(0:3, t = 25)
+h_time(0:3, t = 80)
+```
+
+### Run-length–dependent hazard
+
+```{r}
+h_rl <- hazard_logistic_run_length(a = -6, b = 0.05)
+h_rl(0:10, t = 1)
+```
+
+---
+
+## Observation model
+
+### IID Gaussian mean model
+
+For illustration, the package provides a minimal IID Gaussian mean model,
+intended primarily for testing and examples.
+
+```{r}
+model <- gaussian_iid_model(mu0 = 0, sigma = 1)
+```
+
+This model assumes a known variance and updates only the posterior mean across
+run lengths.
+
+---
+
+## BOCPD engine
+
+### `bocpd_engine`
+
+The function `bocpd_engine()` implements the BOCPD recursion independently of any
+specific observation model. At each time step, the engine:
+
+1. Evaluates predictive likelihoods
+2. Updates the run-length posterior
+3. Normalizes probabilities
+4. Advances model-specific sufficient statistics
+
+The engine is designed for reuse in structured extensions such as graph-based or
+multistream BOCPD.
+
+```{r, eval=FALSE}
+engine <- bocpd_engine(
+  hazard = h_const,
+  model = model
+)
+```
+
+---
+
+## User-facing interface
+
+### `bocpd`
+
+The function `bocpd()` provides a high-level interface for applying BOCPD to a
+univariate time series.
+
+```{r}
+set.seed(1)
+y <- c(rnorm(50), rnorm(50, mean = 3))
+
+res <- bocpd(
+  y,
+  hazard = h_const,
+  model = model
+)
+```
+
+The returned object contains:
+
+- Run-length posterior summaries
+- Changepoint probabilities
+- Model-specific posterior quantities
+
+This interface is suitable for most applied use cases.
+
+---
+
+## Deviations from the idealized algorithm
+
+The implementation follows Adams and MacKay (2007) with intentional deviations
+motivated by numerical stability and software engineering considerations.
+
+### Hazard interface
+
+Hazards are evaluated as
+
+```
+h(run_length, t, ...)
+```
+
+rather than as functions of run length alone. This allows time-varying or
+exogenous changepoint priors.
+
+### Run-length truncation and pruning
+
+Optional truncation (`r_max`) and probability pruning (`prune_eps`) are provided
+to control computational complexity. These operations approximate the exact
+recursion but do not alter the underlying probabilistic model.
+
+### Numerical safeguards
+
+When floating-point underflow or overflow prevents reliable normalization of the
+run-length posterior, the implementation falls back to a valid distribution
+placing all mass on \(r_t = 0\). This behavior preserves probabilistic
+invariants but is not part of the mathematical BOCPD algorithm.
+
+---
+
+## References
+
+Adams, R. P. and MacKay, D. J. C. (2007).
+*Bayesian Online Changepoint Detection*. arXiv:0710.3742.
+
+Bretz, F. (2021).
+*Bayesian Online Changepoint Detection*. Lecture notes / technical report.
+

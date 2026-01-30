@@ -16,7 +16,7 @@ as_adjacency_matrix(
 
 \item{n_nodes}{Optional integer number of nodes (needed for adjacency lists)}
 
-\item{allow_weights}{Logical; if FALSE, adjacency is coerced to {0,1}}
+\item{allow_weights}{Logical; if FALSE, adjacency is coerced to \eqn{\{0,1\}}.}
 
 \item{directed}{Logical; if FALSE, enforces symmetry by max(A, t(A))}
 }

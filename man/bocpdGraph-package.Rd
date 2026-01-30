@@ -2,7 +2,6 @@
 % Please edit documentation in R/bocpd-package.R
 \docType{package}
 \name{bocpdGraph-package}
-\alias{bocpdGraph}
 \alias{bocpdGraph-package}
 \title{bocpdGraph: Bayesian Online Changepoint Detection}
 \description{

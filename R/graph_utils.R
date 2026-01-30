@@ -1,17 +1,39 @@
 #' Graph utilities (internal)
 #'
 #' Internal helpers for validating and normalizing graph inputs used by
-#' \code{bocpdGraph()}.
+#' \code{\link{bocpdGraph}}.
 #'
 #' These functions avoid hard dependencies on graph packages. If an \pkg{igraph}
 #' object is supplied, \pkg{igraph} must be available (typically in Suggests).
 #' Sparse matrices from \pkg{Matrix} are supported without coercing to dense.
 #'
+#' @name graph_utils
 #' @keywords internal
 NULL
 
 .is_sparse_matrix <- function(x) {
   inherits(x, "Matrix")
+}
+
+.matrix_ns <- function() {
+  if (!requireNamespace("Matrix", quietly = TRUE)) {
+    stop("Matrix package required for sparse matrix operations.")
+  }
+  asNamespace("Matrix")
+}
+
+.igraph_ns <- function() {
+  if (!requireNamespace("igraph", quietly = TRUE)) {
+    stop("`graph` is an igraph object but the igraph package is not available.")
+  }
+  asNamespace("igraph")
+}
+
+# codetools-safe setter for Matrix::diag<-
+.Matrix_diag_set <- function(A, value) {
+  M <- .matrix_ns()
+  diag_setter <- get("diag<-", envir = M)
+  diag_setter(A, value = value)
 }
 
 #' Normalize a graph input to an adjacency matrix (dense or sparse)
@@ -29,9 +51,10 @@ NULL
 #'
 #' @param graph Graph representation (matrix, Matrix, adjacency list, or igraph)
 #' @param n_nodes Optional integer number of nodes (needed for adjacency lists)
-#' @param allow_weights Logical; if FALSE, adjacency is coerced to {0,1}
+#' @param allow_weights Logical; if FALSE, adjacency is coerced to \eqn{\{0,1\}}.
 #' @param directed Logical; if FALSE, enforces symmetry by max(A, t(A))
 #' @return Adjacency matrix (base matrix or Matrix).
+#' @importFrom methods as
 #' @keywords internal
 as_adjacency_matrix <- function(graph,
                                 n_nodes = NULL,
@@ -41,51 +64,64 @@ as_adjacency_matrix <- function(graph,
     stop("Unsupported `graph` type: data.frame. Provide a matrix, Matrix, adjacency list, or igraph object.")
   }
 
+  # Base matrix
   if (is.matrix(graph) && !inherits(graph, "Matrix")) {
     A <- graph
-    if (!is.numeric(A)) A <- suppressWarnings(matrix(as.numeric(A), nrow = nrow(A)))
+    if (!is.numeric(A)) {
+      A <- suppressWarnings(matrix(as.numeric(A), nrow = nrow(A), ncol = ncol(A)))
+    }
     if (nrow(A) != ncol(A)) stop("`graph` adjacency matrix must be square.")
     A[is.na(A)] <- 0
     if (any(!is.finite(A))) stop("Adjacency matrix contains non-finite values.")
+    if (any(A < 0)) stop("Adjacency/weight matrix must be nonnegative.")
     diag(A) <- 0
     if (!directed) A <- pmax(A, t(A))
     if (!allow_weights) A <- (A != 0) * 1
     return(A)
   }
 
+  # Matrix package classes (sparse or dense)
   if (.is_sparse_matrix(graph)) {
-    if (!requireNamespace("Matrix", quietly = TRUE)) {
-      stop("Sparse/dense Matrix input provided but the Matrix package is not available.")
-    }
+    M <- .matrix_ns()
     A <- graph
     if (nrow(A) != ncol(A)) stop("`graph` adjacency matrix must be square.")
-    # Ensure numeric storage
-    if (!is.numeric(A@x)) storage.mode(A@x) <- "double"
-    # Replace NA in x-slot if present
-    if (length(A@x) && anyNA(A@x)) A@x[is.na(A@x)] <- 0
-    if (length(A@x) && any(!is.finite(A@x))) stop("Adjacency matrix contains non-finite values.")
 
-    # No self-loops
-    Matrix::diag(A) <- 0
+    # Validate numeric + finite + nonnegative using summary (works broadly across Matrix classes)
+    s <- M$summary(A) # i, j, x for nonzeros
+    if (nrow(s) && anyNA(s$x)) {
+      stop("Adjacency matrix contains NA values in nonzero entries.")
+    }
+    if (nrow(s) && any(!is.finite(s$x))) stop("Adjacency matrix contains non-finite values.")
+    if (nrow(s) && any(s$x < 0)) stop("Adjacency/weight matrix must be nonnegative.")
 
-    # Symmetrize if undirected using elementwise max without densifying
+    # No self-loops (codetools-safe)
+    A <- .Matrix_diag_set(A, 0)
+
+    # Symmetrize if undirected without densifying
     if (!directed) {
-      At <- Matrix::t(A)
-      # Elementwise max for sparse matrices:
-      # Combine nonzeros from both and take max per (i,j)
-      A <- .sparse_pmax(A, At)
-      Matrix::diag(A) <- 0
+      A <- .sparse_pmax(A, M$t(A))
+      A <- .Matrix_diag_set(A, 0)
     }
 
     if (!allow_weights) {
       # Coerce all nonzeros to 1 while preserving sparsity
-      if (length(A@x)) A@x[] <- 1
-      A <- Matrix::drop0(A)
+      s <- M$summary(A)
+      if (nrow(s)) {
+        A <- M$sparseMatrix(
+          i = s$i, j = s$j,
+          x = rep(1, nrow(s)),
+          dims = dim(A),
+          giveCsparse = TRUE
+        )
+        A <- .Matrix_diag_set(A, 0)
+      }
+      A <- M$drop0(A)
     }
 
     return(A)
   }
 
+  # Adjacency list
   if (is.list(graph) && !inherits(graph, "igraph")) {
     if (is.null(n_nodes)) {
       n_nodes <- length(graph)
@@ -94,13 +130,9 @@ as_adjacency_matrix <- function(graph,
     A <- matrix(0, nrow = n_nodes, ncol = n_nodes)
     for (i in seq_len(n_nodes)) {
       nbrs <- graph[[i]]
-      if (is.logical(nbrs)) {
-        stop("Adjacency list entries must be integer indices, not logical.")
-      }
+      if (is.logical(nbrs)) stop("Adjacency list entries must be integer indices, not logical.")
       if (length(nbrs) == 0) next
-      if (!is.numeric(nbrs) && !is.integer(nbrs)) {
-        stop("Adjacency list entries must be integer indices.")
-      }
+      if (!is.numeric(nbrs) && !is.integer(nbrs)) stop("Adjacency list entries must be integer indices.")
       nbrs <- as.integer(nbrs)
       nbrs <- nbrs[!is.na(nbrs)]
       if (any(nbrs < 1L | nbrs > n_nodes)) stop("Adjacency list contains out-of-range node indices.")
@@ -112,24 +144,36 @@ as_adjacency_matrix <- function(graph,
     return(A)
   }
 
+  # igraph
   if (inherits(graph, "igraph")) {
-    if (!requireNamespace("igraph", quietly = TRUE)) {
-      stop("`graph` is an igraph object but the igraph package is not available.")
-    }
-    A <- igraph::as_adjacency_matrix(graph, sparse = TRUE)
-    # ensure Matrix class
-    if (!requireNamespace("Matrix", quietly = TRUE)) {
-      stop("igraph adjacency requested as sparse but Matrix package is not available.")
-    }
-    A <- methods::as(A, "dgCMatrix")
-    Matrix::diag(A) <- 0
+    .igraph_ns() # validates availability
+    M <- .matrix_ns()
+
+    # Avoid igraph:: usage: call exported function via namespace
+    as_adj <- getExportedValue("igraph", "as_adjacency_matrix")
+    A <- as_adj(graph, sparse = TRUE)
+
+    # Ensure a Csparse numeric Matrix class if possible
+    # Use base as() (no methods::) to avoid CRAN dependency warnings.
+    A <- as(A, "dgCMatrix")
+
+    A <- .Matrix_diag_set(A, 0)
     if (!directed) {
-      A <- .sparse_pmax(A, Matrix::t(A))
-      Matrix::diag(A) <- 0
+      A <- .sparse_pmax(A, M$t(A))
+      A <- .Matrix_diag_set(A, 0)
     }
     if (!allow_weights) {
-      if (length(A@x)) A@x[] <- 1
-      A <- Matrix::drop0(A)
+      s <- M$summary(A)
+      if (nrow(s)) {
+        A <- M$sparseMatrix(
+          i = s$i, j = s$j,
+          x = rep(1, nrow(s)),
+          dims = dim(A),
+          giveCsparse = TRUE
+        )
+        A <- .Matrix_diag_set(A, 0)
+      }
+      A <- M$drop0(A)
     }
     return(A)
   }
@@ -139,24 +183,19 @@ as_adjacency_matrix <- function(graph,
 
 # Sparse elementwise max(A, B) without densifying
 .sparse_pmax <- function(A, B) {
-  # A and B are Matrix objects of same dimension
-  if (!requireNamespace("Matrix", quietly = TRUE)) {
-    stop("Matrix package required for sparse operations.")
-  }
+  M <- .matrix_ns()
   if (nrow(A) != nrow(B) || ncol(A) != ncol(B)) stop("Dimension mismatch in .sparse_pmax().")
 
-  sa <- Matrix::summary(A)
-  sb <- Matrix::summary(B)
+  sa <- M$summary(A)
+  sb <- M$summary(B)
 
   # Merge keys (i,j) taking max(x)
   key_a <- paste(sa$i, sa$j, sep = ":")
   key_b <- paste(sb$i, sb$j, sep = ":")
 
-  # Start with A's entries
   vals <- sa$x
   names(vals) <- key_a
 
-  # Update/insert from B
   for (k in seq_along(sb$x)) {
     kk <- key_b[k]
     xv <- sb$x[k]
@@ -168,14 +207,12 @@ as_adjacency_matrix <- function(graph,
     }
   }
 
-  # Build sparse matrix from merged triplets
   parts <- strsplit(names(vals), ":", fixed = TRUE)
   ii <- as.integer(vapply(parts, `[[`, character(1), 1L))
   jj <- as.integer(vapply(parts, `[[`, character(1), 2L))
   xx <- as.numeric(unname(vals))
 
-  M <- Matrix::sparseMatrix(i = ii, j = jj, x = xx, dims = dim(A), giveCsparse = TRUE)
-  Matrix::drop0(M)
+  M$drop0(M$sparseMatrix(i = ii, j = jj, x = xx, dims = dim(A), giveCsparse = TRUE))
 }
 
 #' Validate adjacency matrix invariants
@@ -190,28 +227,26 @@ validate_adjacency <- function(A, directed = FALSE, tol = 0) {
   if (nrow(A) != ncol(A)) stop("Adjacency must be square.")
 
   if (inherits(A, "Matrix")) {
-    if (!requireNamespace("Matrix", quietly = TRUE)) stop("Matrix package required.")
-    if (length(A@x)) {
-      if (any(!is.finite(A@x))) stop("Adjacency matrix contains non-finite values.")
-      if (any(A@x < 0)) stop("Adjacency/weight matrix must be nonnegative.")
-    }
-    # diagonal must be zero (check via diag)
-    if (any(Matrix::diag(A) != 0)) stop("Adjacency matrix must have zero diagonal (no self-loops).")
+    M <- .matrix_ns()
+    s <- M$summary(A)
+    if (nrow(s) && any(!is.finite(s$x))) stop("Adjacency matrix contains non-finite values.")
+    if (nrow(s) && any(s$x < 0)) stop("Adjacency/weight matrix must be nonnegative.")
+    if (any(M$diag(A) != 0)) stop("Adjacency matrix must have zero diagonal (no self-loops).")
 
     if (!directed) {
-      D <- A - Matrix::t(A)
-      # max(abs(D)) safely
-      if (length(D@x) && max(abs(D@x)) > tol) stop("Adjacency matrix must be symmetric for an undirected graph.")
+      D <- A - M$t(A)
+      sd <- M$summary(D)
+      if (nrow(sd) && max(abs(sd$x)) > tol) stop("Adjacency matrix must be symmetric for an undirected graph.")
     }
     invisible(TRUE)
   } else {
     if (!is.numeric(A)) stop("Adjacency matrix must be numeric.")
     if (any(!is.finite(A))) stop("Adjacency matrix contains non-finite values.")
+    if (any(A < 0)) stop("Adjacency/weight matrix must be nonnegative.")
     if (any(diag(A) != 0)) stop("Adjacency matrix must have zero diagonal (no self-loops).")
     if (!directed) {
       if (max(abs(A - t(A))) > tol) stop("Adjacency matrix must be symmetric for an undirected graph.")
     }
-    if (any(A < 0)) stop("Adjacency/weight matrix must be nonnegative.")
     invisible(TRUE)
   }
 }
@@ -237,13 +272,11 @@ adjacency_to_neighbors <- function(A, include_weights = TRUE) {
   wts  <- if (include_weights) vector("list", n) else NULL
 
   if (inherits(A, "Matrix")) {
-    if (!requireNamespace("Matrix", quietly = TRUE)) stop("Matrix package required.")
-    s <- Matrix::summary(A) # i, j, x for nonzeros
-    # remove diagonal just in case
+    M <- .matrix_ns()
+    s <- M$summary(A)
     keep <- s$i != s$j
     s <- s[keep, , drop = FALSE]
 
-    # split indices by row
     if (nrow(s) == 0) {
       for (i in seq_len(n)) {
         nbrs[[i]] <- integer(0)
@@ -316,3 +349,4 @@ standardize_graph <- function(graph,
     n_nodes = nrow(A)
   )
 }
+

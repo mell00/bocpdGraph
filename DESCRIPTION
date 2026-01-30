@@ -12,10 +12,11 @@ Suggests:
     knitr,
     rmarkdown,
     igraph,
+    Matrix,
     testthat (>= 3.0.0)
 Imports:
     utils,
-    Matrix
+    methods
 Config/testthat/edition: 3
 URL: https://github.com/mell00/bocpdGraph
 BugReports: https://github.com/mell00/bocpdGraph/issues

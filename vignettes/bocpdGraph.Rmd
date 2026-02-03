@@ -1,0 +1,122 @@
+---
+title: "bocpdGraph: Bayesian online changepoint detection on graphs"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{bocpdGraph: Bayesian online changepoint detection on graphs}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.width = 6,
+  fig.height = 3.5
+)
+set.seed(1)
+library(bocpdGraph)
+```
+
+## What `bocpdGraph()` does
+
+`bocpdGraph()` applies Bayesian online changepoint detection (BOCPD) to time-ordered data observed on the nodes of a graph.
+
+- The BOCPD run-length recursion is applied per node.
+- Graph structure enters only through the graph model (via the predictive log-likelihood).
+
+This vignette demonstrates a minimal runnable workflow using an adjacency matrix and the reference
+nodewise model `graph_gaussian_iid_model()`.
+
+## Inputs: data and graph
+
+### Data format (nodes × time)
+
+```{r}
+n_nodes <- 6
+T <- 120
+t0 <- 60
+
+x <- matrix(rnorm(n_nodes * T, sd = 1), nrow = n_nodes, ncol = T)
+x[, (t0 + 1):T] <- x[, (t0 + 1):T] + 2  # mean shift after changepoint
+
+dim(x)
+```
+
+### Graph format (adjacency matrix)
+
+`bocpdGraph()` accepts an adjacency matrix directly (square, nonnegative, and zero diagonal).
+
+```{r}
+A <- matrix(0, n_nodes, n_nodes)
+for (i in 1:(n_nodes - 1)) {
+  A[i, i + 1] <- 1
+  A[i + 1, i] <- 1
+}
+A
+```
+
+## Minimal graph model
+
+For runnable examples, start with the nodewise IID Gaussian model (no coupling).
+
+```{r}
+gmodel <- graph_gaussian_iid_model(mu0 = 0, sigma = 1)
+h <- hazard_constant(1/80)
+```
+
+## Run `bocpdGraph()`
+
+```{r}
+fit <- bocpdGraph(
+  data = x,
+  graph = A,
+  model = gmodel,
+  hazard = h,
+  control = list(r_max = 80, store_R = TRUE, verbose = FALSE)
+)
+
+# R is an array: nodes × time × (run lengths 0..r_max)
+dim(fit$R)
+```
+
+## Inspect changepoint signals
+
+A common changepoint signal is the posterior mass at run length 0:
+\[
+P(r_t = 0 \mid x_{1:t})
+\]
+
+```{r}
+R1 <- fit$R[1, , ]     # T × (r_max+1) for node 1
+cp_prob_node1 <- R1[, 1]
+head(cp_prob_node1)
+```
+
+```{r}
+plot(cp_prob_node1, type = "l", xlab = "t", ylab = "P(r_t = 0 | x_{1:t})")
+abline(v = t0, lty = 2)
+```
+
+A second diagnostic is the MAP run length:
+
+```{r}
+map_rl_node1 <- apply(R1, 1, function(v) which.max(v) - 1L)
+head(map_rl_node1)
+```
+
+```{r}
+plot(map_rl_node1, type = "l", xlab = "t", ylab = "MAP run length")
+abline(v = t0, lty = 2)
+```
+
+## Extending to coupled graph models
+
+To incorporate graph dependence, define a new model class implementing:
+
+- `graph_model_init()`
+- `graph_pred_loglik()`
+- `graph_model_update()`
+
+The BOCPD recursion stays unchanged; graph coupling belongs entirely in the model layer.
+
